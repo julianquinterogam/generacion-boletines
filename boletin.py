@@ -2,8 +2,8 @@
 
 Replica la estructura de BOLETIN_MODELO.xls: encabezado, tabla de asignaturas con
 logros y desempeño/nota a la derecha, y pie con observaciones, promedio, puesto y firmas.
-Comportamiento social es SOBRESALIENTE para todos. Observaciones e inasistencias
-se dejan vacías (aún no tienen fuente).
+Comportamiento social es SOBRESALIENTE para todos. Observaciones (con líneas para
+escribir a mano) e inasistencias se dejan vacías (aún no tienen fuente).
 """
 import io
 import math
@@ -208,6 +208,14 @@ def generar_boletin_xlsx(meta, estudiante, logros):
     fila = ultima_tabla + 2
     escribir(fila, 1, "OBSERVACIONES:", f(7))
     ws.row_dimensions[fila].height = 16.5
+    ws.row_dimensions[fila + 1].height = 16.5
+    # Líneas punteadas para que el docente escriba a mano (como en el modelo):
+    # una a la derecha de "OBSERVACIONES:" y otra de ancho completo debajo.
+    PUNTEADO = Side(style="hair")
+    for c in range(2, 8):
+        borde(fila, c, bottom=PUNTEADO)
+    for c in range(1, 8):
+        borde(fila + 1, c, bottom=PUNTEADO)
     fila += 3
     escribir(fila, 1, "INASISTENCIAS:", f(7))
     escribir(fila, 5, f"COMPORTAMIENTO SOCIAL: {COMPORTAMIENTO_SOCIAL}", f(7))
