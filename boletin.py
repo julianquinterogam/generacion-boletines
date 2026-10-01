@@ -2,8 +2,8 @@
 
 Replica la estructura de BOLETIN_MODELO.xls: encabezado, tabla de asignaturas con
 logros y desempeño/nota a la derecha, y pie con observaciones, promedio, puesto y firmas.
-Campos que aún no tienen fuente (observaciones, inasistencias, comportamiento social)
-se dejan vacíos.
+Comportamiento social es SOBRESALIENTE para todos. Observaciones e inasistencias
+se dejan vacías (aún no tienen fuente).
 """
 import io
 import math
@@ -27,6 +27,8 @@ DIRECTORES = {
     "QUINTO":     ("ORLANDO AGUDELO HERNÁNDEZ", "Director de Grado"),
 }
 DIRECTORA_LICEO = ("HILDA GAMBOA ARIZA", "Directora del Liceo")
+# Todos los estudiantes llevan este valor (indicado por el colegio).
+COMPORTAMIENTO_SOCIAL = "SOBRESALIENTE"
 PERIODO_TEXTO = {"I": "PRIMER", "II": "SEGUNDO", "III": "TERCER"}
 
 FUENTE = "Comic Sans MS"
@@ -208,7 +210,7 @@ def generar_boletin_xlsx(meta, estudiante, logros):
     ws.row_dimensions[fila].height = 16.5
     fila += 3
     escribir(fila, 1, "INASISTENCIAS:", f(7))
-    escribir(fila, 5, "COMPORTAMIENTO SOCIAL:", f(7))
+    escribir(fila, 5, f"COMPORTAMIENTO SOCIAL: {COMPORTAMIENTO_SOCIAL}", f(7))
     fila += 1
     escribir(fila, 1, f"PROMEDIO: {fmt(estudiante['promedio'])}", f(8))
     escribir(fila, 2, f"PUESTO: {estudiante['puesto']}", f(8), "left")
