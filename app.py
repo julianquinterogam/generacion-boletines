@@ -1,3 +1,4 @@
+import hashlib
 import tempfile
 from decimal import Decimal
 
@@ -5,6 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from boletin import generar_boletin_xlsx
+from lote import generar_lote
 from lectura import MATERIAS, calcular_puestos, desempeno, fmt, leer_logros, leer_notas
 
 st.set_page_config(page_title="Boletines – Revisión de datos", layout="wide")
@@ -74,5 +76,30 @@ if f_xlsx and f_docx:
         file_name=f"Boletin_{meta['grado']}_{elegido.replace(' ', '_')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+    st.markdown("#### Todos los boletines del grado")
+    huella = hashlib.md5(f_xlsx.getvalue() + f_docx.getvalue()).hexdigest()
+    if st.session_state.get("lote_huella") != huella:
+        st.session_state.pop("lote_zip", None)  # los archivos cambiaron: el ZIP anterior ya no aplica
+
+    if st.button(f"Generar los {len(estudiantes)} boletines"):
+        barra = st.progress(0.0, text="Preparando…")
+        datos_zip, adv_lote = generar_lote(
+            meta, estudiantes, logros,
+            progreso=lambda valor, texto: barra.progress(valor, text=texto))
+        barra.empty()
+        st.session_state["lote_zip"] = datos_zip
+        st.session_state["lote_adv"] = adv_lote
+        st.session_state["lote_huella"] = huella
+
+    if "lote_zip" in st.session_state:
+        for aviso in st.session_state.get("lote_adv", []):
+            st.warning(aviso)
+        st.download_button(
+            "Descargar todos los boletines (ZIP)",
+            data=st.session_state["lote_zip"],
+            file_name=f"Boletines_{meta['grado']}_{meta['periodo']}_{meta['anio']}.zip",
+            mime="application/zip",
+        )
 else:
     st.info("Sube la planilla de notas y el Word de logros para ver la revisión.")
