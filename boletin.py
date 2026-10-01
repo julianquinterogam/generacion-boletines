@@ -34,6 +34,7 @@ PERIODO_TEXTO = {"I": "PRIMER", "II": "SEGUNDO", "III": "TERCER"}
 FUENTE = "Comic Sans MS"
 FUENTE_TITULO = "Bradley Hand ITC"
 LADO = Side(style="thin")
+MEDIO = Side(style="medium")   # marco exterior, como en la plantilla
 
 
 def _clave_grado(grado):
@@ -42,8 +43,9 @@ def _clave_grado(grado):
     return "".join(c for c in t if c.isalpha() and unicodedata.category(c) != "Mn").upper()
 
 
-def _alto_logro(texto, caracteres_por_linea=92):
-    """Alto de fila según líneas estimadas (1 línea = 18,75 ; 2 líneas = 31,5, como en el modelo)."""
+def _alto_logro(texto, caracteres_por_linea=100):
+    """Alto de fila según líneas estimadas (1 línea = 18,75 ; 2 líneas = 31,5, como en el modelo).
+    100 caracteres por línea: calibrado con el modelo (ahí caben líneas de hasta 107)."""
     lineas = max(1, math.ceil(len(texto) / caracteres_por_linea))
     return 12.75 * lineas + 6
 
@@ -93,7 +95,7 @@ def generar_boletin_xlsx(meta, estudiante, logros):
     escribir(6, 2, estudiante["nombre"], f(11, True, True))
     escribir(8, 1, " Escala valorativa de desempeño: Superior: 4.6 a 5.0      Alto: 4.0 a 4.5        "
                    "Básico: 3.5 a 3.9        Bajo: 1.0 a 3,4", f(8), "center")
-    for r, h in ((1, 21), (2, 15), (3, 21.75), (5, 21), (6, 21), (8, 12.75), (10, 15.75)):
+    for r, h in ((1, 21), (2, 15), (3, 21.75), (4, 5.25), (5, 21), (6, 21), (7, 6), (8, 12.75), (9, 2.25), (10, 15.75)):
         ws.row_dimensions[r].height = h
 
     escribir(10, 1, "ASIGNATURA", f(8, True), "center")
@@ -137,8 +139,8 @@ def generar_boletin_xlsx(meta, estudiante, logros):
             fusionar(fila, 1, fila, 7)
             ws.row_dimensions[fila].height = _alto_logro(t)
             fila += 1
-        # Fila en blanco de separación (como en el modelo)
-        ws.row_dimensions[fila].height = 9
+        # Fila en blanco de separación (en el modelo mide entre 3 y 7,5; la última es la de cierre de 1,5)
+        ws.row_dimensions[fila].height = 1.5 if m is MATERIAS[-1] else 5.25
         fusionar(fila, 1, fila, 7)
         ultima = fila
         fila += 1
@@ -161,20 +163,24 @@ def generar_boletin_xlsx(meta, estudiante, logros):
             left=lados.get("left", actual.left), right=lados.get("right", actual.right),
             top=lados.get("top", actual.top), bottom=lados.get("bottom", actual.bottom))
 
+    # Marco exterior de grosor medio (izquierda, derecha, arriba y cierre de la tabla)
     for r in range(1, ultima_tabla + 1):
-        borde(r, 1, left=LADO)
-        borde(r, 8, right=LADO)
-        if r >= 10:
-            borde(r, 8, left=LADO)
+        borde(r, 1, left=MEDIO)
+        borde(r, 8, right=MEDIO)
     for c in range(1, 9):
-        borde(1, c, top=LADO)
+        borde(1, c, top=MEDIO)
+        borde(ultima_tabla, c, bottom=MEDIO)
+        borde(2, c, bottom=LADO)    # línea bajo la licencia de funcionamiento
         borde(3, c, top=LADO)
         borde(10, c, top=LADO, bottom=LADO)
-        borde(ultima_tabla, c, bottom=LADO)
-    for c in (2, 3):
-        borde(5, c, bottom=LADO)
-    for c in (5, 6):
-        borde(5, c, bottom=LADO)
+    # Línea vertical entre ASIGNATURA/logros y DESEMPEÑO/nota
+    for r in range(10, ultima_tabla + 1):
+        borde(r, 7, right=LADO)
+        borde(r, 8, left=LADO)
+    # Subrayados de GRADO y AÑO (solo bajo las celdas B y E, como en el modelo) y de ESTUDIANTE
+    borde(5, 2, bottom=LADO)
+    borde(5, 5, bottom=LADO)
+    borde(6, 5, top=LADO)
     for c in range(2, 6):
         borde(6, c, bottom=LADO)
     for r, c1, c2 in bordes_superiores:
@@ -185,14 +191,16 @@ def generar_boletin_xlsx(meta, estudiante, logros):
     def alto(r):
         return ws.row_dimensions[r].height or 15
 
-    CAPACIDAD = 700   # puntos útiles por página A4 (con margen de seguridad)
-    ALTO_PIE = 170    # observaciones, promedio, puesto y firmas
+    # Página A4 con la configuración de la plantilla: márgenes superior 0,39" e inferior 0,75",
+    # escala 95 % -> (841,9 - 28,1 - 54) / 0,95 = 800 pt de filas; se deja ~5 % de holgura.
+    CAPACIDAD = 760
+    ALTO_PIE = 160    # observaciones, inasistencias, promedio, puesto y firmas
     y = sum(alto(r) for r in range(1, 11))
     saltos = []
-    for ini, fin in unidades:
-        h = sum(alto(r) for r in range(ini, fin + 1))
+    for ini_u, fin_u in unidades:
+        h = sum(alto(r) for r in range(ini_u, fin_u + 1))
         if y + h > CAPACIDAD:
-            saltos.append(ini - 1)
+            saltos.append(ini_u - 1)
             y = 0
         y += h
     if y + ALTO_PIE > CAPACIDAD:
@@ -202,15 +210,18 @@ def generar_boletin_xlsx(meta, estudiante, logros):
         ws.row_breaks.append(Break(id=r))
         if r != ultima_tabla:
             for c in range(1, 9):
-                borde(r, c, bottom=LADO)
+                borde(r, c, bottom=MEDIO)      # se cierra el marco al final de la página
+                borde(r + 1, c, top=MEDIO)     # y se reabre al inicio de la siguiente
 
     # ------------------------------------------------------------------- Pie
+    # Estructura idéntica a la plantilla: fila de separación (20,25), observaciones con dos
+    # líneas punteadas para escribir a mano, inasistencias/comportamiento, promedio/puesto,
+    # un espacio libre para la firma (sin línea) y los nombres con su cargo.
+    ws.row_dimensions[ultima_tabla + 1].height = 20.25
     fila = ultima_tabla + 2
     escribir(fila, 1, "OBSERVACIONES:", f(7))
     ws.row_dimensions[fila].height = 16.5
     ws.row_dimensions[fila + 1].height = 16.5
-    # Líneas punteadas para que el docente escriba a mano (como en el modelo):
-    # una a la derecha de "OBSERVACIONES:" y otra de ancho completo debajo.
     PUNTEADO = Side(style="hair")
     for c in range(2, 8):
         borde(fila, c, bottom=PUNTEADO)
@@ -222,24 +233,34 @@ def generar_boletin_xlsx(meta, estudiante, logros):
     fila += 1
     escribir(fila, 1, f"PROMEDIO: {fmt(estudiante['promedio'])}", f(8))
     escribir(fila, 2, f"PUESTO: {estudiante['puesto']}", f(8), "left")
-    fila += 3
+    fila += 2
     for c1, c2 in ((1, 2), (5, 6)):
-        fusionar(fila, c1, fila, c2)
-        for c in range(c1, c2 + 1):
-            borde(fila, c, bottom=LADO)
+        fusionar(fila, c1, fila, c2)      # espacio para la firma, sin línea
     fila += 1
     escribir(fila, 1, director, f(8, True))
     escribir(fila, 5, DIRECTORA_LICEO[0], f(8, True))
+    ws.row_dimensions[fila].height = 15.75
     fila += 1
     escribir(fila, 1, cargo, f(8))
     escribir(fila, 5, DIRECTORA_LICEO[1], f(8))
+    for r in range(ultima_tabla + 4, fila + 1):
+        if ws.row_dimensions[r].height is None:
+            ws.row_dimensions[r].height = 15
 
-    # --------------------------------------------------------- Impresión A4
+    # Las celdas vacías también usan la fuente de la plantilla (Comic Sans MS 11)
+    for fila_celdas in ws.iter_rows(min_row=1, max_row=fila, min_col=1, max_col=8):
+        for c in fila_celdas:
+            if c.font.name not in (FUENTE, FUENTE_TITULO):
+                c.font = Font(name=FUENTE, size=11, color="FF000000")
+
+    # --------------------------------------------- Impresión A4 (como la plantilla)
     ws.page_setup.paperSize = 9
     ws.page_setup.orientation = "portrait"
-    ws.page_margins.left = ws.page_margins.right = 0.25
-    ws.page_margins.top = ws.page_margins.bottom = 0.75
-    ws.page_setup.scale = 100
+    ws.page_setup.scale = 95
+    ws.page_margins.left, ws.page_margins.right = 0.63, 0.24
+    ws.page_margins.top, ws.page_margins.bottom = 0.39, 0.75
+    ws.page_margins.header = ws.page_margins.footer = 0.51
+    ws.print_options.horizontalCentered = True
     ws.print_area = f"A1:H{fila}"
 
     buf = io.BytesIO()
