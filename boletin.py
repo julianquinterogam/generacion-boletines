@@ -5,17 +5,16 @@ logros y desempeño/nota a la derecha, y pie con observaciones, promedio, puesto
 Comportamiento social es SOBRESALIENTE para todos. Observaciones (con líneas para
 escribir a mano) e inasistencias se dejan vacías (aún no tienen fuente).
 
-Impresión como PLANTILLA_BOLETIN.xls: A4, escala 95 %, márgenes 0,63" izquierdo, 0,24" derecho,
-0,39" superior y 0,75" inferior, centrado. El boletín corre de página en página sin saltos forzados (una materia puede
-quedar partida entre dos hojas). Solo se evita que el título de una materia quede solo al final
-de una página y que el pie (observaciones y firmas) se parta.
+Impresión como PLANTILLA_BOLETIN.xls: mismo código de papel (personalizado de la impresora),
+escala 95 %, márgenes 0,63" izquierdo, 0,24" derecho, 0,39" superior y 0,75" inferior, centrado.
+No se fuerza ningún salto de página: el boletín corre de una hoja a otra y Excel corta entre
+filas según el papel con el que se imprima (una materia puede quedar partida, como en el modelo).
 """
 import io
 import math
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, Side
-from openpyxl.worksheet.pagebreak import Break
 
 from lectura import MATERIAS, desempeno, fmt
 
@@ -111,7 +110,6 @@ def generar_boletin_xlsx(meta, estudiante, logros):
     # ----------------------------------------------------------------- Cuerpo
     fila = 11
     bordes_superiores = []   # (fila, col_i, col_f)
-    conservar = set()        # filas de título: no pueden quedar solas al final de una página
     grupo_previo = None
     for m in MATERIAS:
         nota = estudiante["notas"].get(m["col_excel"])
@@ -122,7 +120,6 @@ def generar_boletin_xlsx(meta, estudiante, logros):
             escribir(fila, 1, m["grupo"], f(8, True), "center")
             fusionar(fila, 1, fila, 7)
             ws.row_dimensions[fila].height = 17.25
-            conservar.add(fila)
             fila += 1
         grupo_previo = m["grupo"]
 
@@ -133,7 +130,6 @@ def generar_boletin_xlsx(meta, estudiante, logros):
         fusionar(fila, 1, fila, 7)
         escribir(fila, 8, desempeno(nota) if nota is not None else "", f(12), "center", "center", True)
         ws.row_dimensions[fila].height = 17.25
-        conservar.add(fila)
         fila += 1
 
         # Logros
@@ -227,36 +223,9 @@ def generar_boletin_xlsx(meta, estudiante, logros):
             if c.font.name not in (FUENTE, FUENTE_TITULO):
                 c.font = Font(name=FUENTE, size=11, color="FF000000")
 
-    # -------------------------------------------- Paginación (como el modelo impreso)
-    # Excel llena cada página y corta entre filas. Se simula esa paginación solo para dos
-    # cuidados: que un título no quede solo al final de una página y que el pie no se parta.
-    def alto(r):
-        return ws.row_dimensions[r].height or 15
-
-    # A4 con márgenes superior 0,39" e inferior 0,75" a escala 95 %: 799,8 pt de filas por página
-    PAGINA_UTIL = (841.9 - 0.39 * 72 - 0.75 * 72) / 0.95 - 6   # menos 6 pt de holgura
-    pagina_de, saltos, y, pagina = {}, [], 0.0, 1
-    for r in range(1, fila + 1):
-        h = alto(r)
-        if y + h > PAGINA_UTIL:               # aquí Excel pasaría a la página siguiente por sí solo
-            k = r - 1
-            while k in conservar:             # un título no se queda solo: pasa con su primer logro
-                k -= 1
-                if k not in conservar:
-                    saltos.append(k)          # solo en este caso hace falta un salto forzado
-            pagina += 1
-            y = sum(alto(j) for j in range(k + 1, r))
-            for j in range(k + 1, r):
-                pagina_de[j] = pagina
-        y += h
-        pagina_de[r] = pagina
-    if pagina_de[ultima_tabla + 2] != pagina_de[fila]:
-        saltos.append(ultima_tabla + 1)       # el pie completo empieza una página nueva
-    for r in saltos:
-        ws.row_breaks.append(Break(id=r))
-
-    # ----------------------------------------- Impresión A4 (como la plantilla)
-    ws.page_setup.paperSize = 9
+    # ------------------------------------------------ Impresión (como la plantilla)
+    # 345 es el código de papel que trae la plantilla (tamaño personalizado de la impresora EPSON L3210).
+    ws.page_setup.paperSize = 345
     ws.page_setup.orientation = "portrait"
     ws.page_setup.scale = 95
     ws.page_margins.left, ws.page_margins.right = 0.63, 0.24
