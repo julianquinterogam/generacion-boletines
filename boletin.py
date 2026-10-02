@@ -4,6 +4,11 @@ Replica la estructura de BOLETIN_MODELO.xls: encabezado, tabla de asignaturas co
 logros y desempeño/nota a la derecha, y pie con observaciones, promedio, puesto y firmas.
 Comportamiento social es SOBRESALIENTE para todos. Observaciones (con líneas para
 escribir a mano) e inasistencias se dejan vacías (aún no tienen fuente).
+
+Impresión como PLANTILLA_BOLETIN.xls: A4, escala 95 %, márgenes 0,63" izquierdo, 0,24" derecho,
+0,39" superior y 0,75" inferior, centrado. El boletín corre de página en página sin saltos forzados (una materia puede
+quedar partida entre dos hojas). Solo se evita que el título de una materia quede solo al final
+de una página y que el pie (observaciones y firmas) se parta.
 """
 import io
 import math
@@ -43,9 +48,10 @@ def _clave_grado(grado):
     return "".join(c for c in t if c.isalpha() and unicodedata.category(c) != "Mn").upper()
 
 
-def _alto_logro(texto, caracteres_por_linea=100):
-    """Alto de fila según líneas estimadas (1 línea = 18,75 ; 2 líneas = 31,5, como en el modelo).
-    100 caracteres por línea: calibrado con el modelo (ahí caben líneas de hasta 107)."""
+def _alto_logro(texto, caracteres_por_linea=105):
+    """Alto de fila según las líneas estimadas (1 línea = 18,75 ; 2 líneas = 31,5, como en el modelo).
+    En las capturas del boletín impreso las líneas llegan a 109-121 caracteres; se usan 105 para
+    que el texto nunca quede cortado."""
     lineas = max(1, math.ceil(len(texto) / caracteres_por_linea))
     return 12.75 * lineas + 6
 
@@ -105,23 +111,20 @@ def generar_boletin_xlsx(meta, estudiante, logros):
     # ----------------------------------------------------------------- Cuerpo
     fila = 11
     bordes_superiores = []   # (fila, col_i, col_f)
-    unidades = []            # [fila_inicio, fila_fin] de cada materia o grupo (no se parten entre páginas)
+    conservar = set()        # filas de título: no pueden quedar solas al final de una página
     grupo_previo = None
     for m in MATERIAS:
         nota = estudiante["notas"].get(m["col_excel"])
         textos = logros.get(m["clave_word"], [])
 
-        inicio_unidad = None
         if m["grupo"] and m["grupo"] != grupo_previo:
-            inicio_unidad = fila
             bordes_superiores.append((fila, 1, 8))
             escribir(fila, 1, m["grupo"], f(8, True), "center")
             fusionar(fila, 1, fila, 7)
             ws.row_dimensions[fila].height = 17.25
+            conservar.add(fila)
             fila += 1
         grupo_previo = m["grupo"]
-        if inicio_unidad is None and not m["grupo"]:
-            inicio_unidad = fila
 
         # Fila de título de la materia + desempeño
         subtitulo = bool(m["grupo"])
@@ -130,6 +133,7 @@ def generar_boletin_xlsx(meta, estudiante, logros):
         fusionar(fila, 1, fila, 7)
         escribir(fila, 8, desempeno(nota) if nota is not None else "", f(12), "center", "center", True)
         ws.row_dimensions[fila].height = 17.25
+        conservar.add(fila)
         fila += 1
 
         # Logros
@@ -144,10 +148,6 @@ def generar_boletin_xlsx(meta, estudiante, logros):
         fusionar(fila, 1, fila, 7)
         ultima = fila
         fila += 1
-        if inicio_unidad is not None:
-            unidades.append([inicio_unidad, ultima])
-        else:
-            unidades[-1][1] = ultima  # segunda materia del mismo grupo
 
         # Nota (celda combinada a la derecha de los logros)
         escribir(primera_logro, 8, fmt(nota) if nota is not None else "", f(12), "center", "center", True)
@@ -186,32 +186,6 @@ def generar_boletin_xlsx(meta, estudiante, logros):
     for r, c1, c2 in bordes_superiores:
         for c in range(c1, c2 + 1):
             borde(r, c, top=LADO)
-
-    # ------------------------------------------ Saltos de página sin partir materias
-    def alto(r):
-        return ws.row_dimensions[r].height or 15
-
-    # Página A4 con la configuración de la plantilla: márgenes superior 0,39" e inferior 0,75",
-    # escala 95 % -> (841,9 - 28,1 - 54) / 0,95 = 800 pt de filas; se deja ~5 % de holgura.
-    CAPACIDAD = 760
-    ALTO_PIE = 160    # observaciones, inasistencias, promedio, puesto y firmas
-    y = sum(alto(r) for r in range(1, 11))
-    saltos = []
-    for ini_u, fin_u in unidades:
-        h = sum(alto(r) for r in range(ini_u, fin_u + 1))
-        if y + h > CAPACIDAD:
-            saltos.append(ini_u - 1)
-            y = 0
-        y += h
-    if y + ALTO_PIE > CAPACIDAD:
-        ini_ultima = unidades[-1][0]
-        saltos.append(ultima_tabla if saltos and saltos[-1] == ini_ultima - 1 else ini_ultima - 1)
-    for r in saltos:
-        ws.row_breaks.append(Break(id=r))
-        if r != ultima_tabla:
-            for c in range(1, 9):
-                borde(r, c, bottom=MEDIO)      # se cierra el marco al final de la página
-                borde(r + 1, c, top=MEDIO)     # y se reabre al inicio de la siguiente
 
     # ------------------------------------------------------------------- Pie
     # Estructura idéntica a la plantilla: fila de separación (20,25), observaciones con dos
@@ -253,7 +227,35 @@ def generar_boletin_xlsx(meta, estudiante, logros):
             if c.font.name not in (FUENTE, FUENTE_TITULO):
                 c.font = Font(name=FUENTE, size=11, color="FF000000")
 
-    # --------------------------------------------- Impresión A4 (como la plantilla)
+    # -------------------------------------------- Paginación (como el modelo impreso)
+    # Excel llena cada página y corta entre filas. Se simula esa paginación solo para dos
+    # cuidados: que un título no quede solo al final de una página y que el pie no se parta.
+    def alto(r):
+        return ws.row_dimensions[r].height or 15
+
+    # A4 con márgenes superior 0,39" e inferior 0,75" a escala 95 %: 799,8 pt de filas por página
+    PAGINA_UTIL = (841.9 - 0.39 * 72 - 0.75 * 72) / 0.95 - 6   # menos 6 pt de holgura
+    pagina_de, saltos, y, pagina = {}, [], 0.0, 1
+    for r in range(1, fila + 1):
+        h = alto(r)
+        if y + h > PAGINA_UTIL:               # aquí Excel pasaría a la página siguiente por sí solo
+            k = r - 1
+            while k in conservar:             # un título no se queda solo: pasa con su primer logro
+                k -= 1
+                if k not in conservar:
+                    saltos.append(k)          # solo en este caso hace falta un salto forzado
+            pagina += 1
+            y = sum(alto(j) for j in range(k + 1, r))
+            for j in range(k + 1, r):
+                pagina_de[j] = pagina
+        y += h
+        pagina_de[r] = pagina
+    if pagina_de[ultima_tabla + 2] != pagina_de[fila]:
+        saltos.append(ultima_tabla + 1)       # el pie completo empieza una página nueva
+    for r in saltos:
+        ws.row_breaks.append(Break(id=r))
+
+    # ----------------------------------------- Impresión A4 (como la plantilla)
     ws.page_setup.paperSize = 9
     ws.page_setup.orientation = "portrait"
     ws.page_setup.scale = 95
